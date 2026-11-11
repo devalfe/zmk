@@ -179,23 +179,33 @@ static void zmk_rgb_underglow_effect_swirl(void) {
 
 // WAVE: rainbow anchored at each half's inner-edge keys (chain start), flowing
 // outward to the outer edges, mirrored between halves, with a soft brightness ripple.
+// Phase runs in half-degree units at 25 ms ticks for smoother motion.
 static void zmk_rgb_underglow_effect_wave(void) {
     uint16_t total = CONFIG_ZMK_RGB_UNDERGLOW_CHAIN_TOTAL > 0 ? CONFIG_ZMK_RGB_UNDERGLOW_CHAIN_TOTAL
                                                              : STRIP_NUM_PIXELS;
-    uint16_t phase = (HUE_MAX - state.animation_step) % HUE_MAX;
+    uint16_t phase = (HUE_MAX * 2 - state.animation_step % (HUE_MAX * 2)) % (HUE_MAX * 2);
     for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
         struct zmk_led_hsb hsb = state.color;
         uint16_t g = i + CONFIG_ZMK_RGB_UNDERGLOW_CHAIN_OFFSET;
-        hsb.h = ((uint32_t)HUE_MAX * g / total + phase) % HUE_MAX;
-        hsb.b = hsb.b * (60 + 40 * (0.5f + 0.5f * sinf((float)g * 0.6f - (float)state.animation_step * 0.05f))) / 100;
+        hsb.h = (((uint32_t)HUE_MAX * 2 * g / total + phase) % (HUE_MAX * 2)) / 2;
+        hsb.b = hsb.b * (60 + 40 * (0.5f + 0.5f * sinf((float)g * 0.6f - (float)state.animation_step * 0.025f))) / 100;
         pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
     }
 
     state.animation_step += state.animation_speed;
-    state.animation_step = state.animation_step % HUE_MAX;
+    state.animation_step = state.animation_step % (HUE_MAX * 2);
 }
 
+static uint8_t tick_half = 0;
+
 static void zmk_rgb_underglow_tick(struct k_work *work) {
+    if (state.current_effect != UNDERGLOW_EFFECT_WAVE) {
+        tick_half ^= 1;
+        if (!tick_half) {
+            return; // native effects keep their original 50 ms cadence
+        }
+    }
+
     switch (state.current_effect) {
     case UNDERGLOW_EFFECT_SOLID:
         zmk_rgb_underglow_effect_solid();
@@ -245,7 +255,7 @@ static int rgb_settings_set(const char *name, size_t len, settings_read_cb read_
         rc = read_cb(cb_arg, &state, sizeof(state));
         if (rc >= 0) {
             if (state.on) {
-                k_timer_start(&underglow_tick, K_NO_WAIT, K_MSEC(50));
+                k_timer_start(&underglow_tick, K_NO_WAIT, K_MSEC(25));
             }
 
             return 0;
@@ -297,7 +307,7 @@ static int zmk_rgb_underglow_init(void) {
 #endif
 
     if (state.on) {
-        k_timer_start(&underglow_tick, K_NO_WAIT, K_MSEC(50));
+        k_timer_start(&underglow_tick, K_NO_WAIT, K_MSEC(25));
     }
 
     return 0;
@@ -335,7 +345,7 @@ int zmk_rgb_underglow_on(void) {
 
     state.on = true;
     state.animation_step = 0;
-    k_timer_start(&underglow_tick, K_NO_WAIT, K_MSEC(50));
+    k_timer_start(&underglow_tick, K_NO_WAIT, K_MSEC(25));
 
     return zmk_rgb_underglow_save_state();
 }

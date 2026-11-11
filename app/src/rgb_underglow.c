@@ -177,17 +177,17 @@ static void zmk_rgb_underglow_effect_swirl(void) {
     state.animation_step = state.animation_step % HUE_MAX;
 }
 
-// WAVE: smooth rainbow flowing along the whole keyboard (across halves) with a soft
-// brightness ripple. The right half continues the gradient where the left one ends
-// via CONFIG_ZMK_RGB_UNDERGLOW_CHAIN_OFFSET.
+// WAVE: rainbow anchored at each half's inner-edge keys (chain start), flowing
+// outward to the outer edges, mirrored between halves, with a soft brightness ripple.
 static void zmk_rgb_underglow_effect_wave(void) {
     uint16_t total = CONFIG_ZMK_RGB_UNDERGLOW_CHAIN_TOTAL > 0 ? CONFIG_ZMK_RGB_UNDERGLOW_CHAIN_TOTAL
                                                              : STRIP_NUM_PIXELS;
+    uint16_t phase = (HUE_MAX - state.animation_step) % HUE_MAX;
     for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
         struct zmk_led_hsb hsb = state.color;
         uint16_t g = i + CONFIG_ZMK_RGB_UNDERGLOW_CHAIN_OFFSET;
-        hsb.h = ((uint32_t)HUE_MAX * g / total + state.animation_step) % HUE_MAX;
-        hsb.b = hsb.b * (60 + 40 * (0.5f + 0.5f * sinf((float)g * 0.6f + (float)state.animation_step * 0.05f))) / 100;
+        hsb.h = ((uint32_t)HUE_MAX * g / total + phase) % HUE_MAX;
+        hsb.b = hsb.b * (60 + 40 * (0.5f + 0.5f * sinf((float)g * 0.6f - (float)state.animation_step * 0.05f))) / 100;
         pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
     }
 

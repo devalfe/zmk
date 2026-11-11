@@ -49,6 +49,7 @@ enum rgb_underglow_effect {
     UNDERGLOW_EFFECT_BREATHE,
     UNDERGLOW_EFFECT_SPECTRUM,
     UNDERGLOW_EFFECT_SWIRL,
+    UNDERGLOW_EFFECT_WALKER,
     UNDERGLOW_EFFECT_NUMBER // Used to track number of underglow effects
 };
 
@@ -175,6 +176,22 @@ static void zmk_rgb_underglow_effect_swirl(void) {
     state.animation_step = state.animation_step % HUE_MAX;
 }
 
+// TEMPORARY (discovery): walks a single lit LED across the strip, 1 s per LED.
+static uint8_t walker_step = 0;
+static uint8_t walker_tick = 0;
+
+static void zmk_rgb_underglow_effect_walker(void) {
+    for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+        uint8_t v = (i == walker_step) ? 255 : 0;
+        pixels[i] = (struct led_rgb){r : v, g : v, b : v};
+    }
+
+    if (++walker_tick >= 20) {
+        walker_tick = 0;
+        walker_step = (walker_step + 1) % STRIP_NUM_PIXELS;
+    }
+}
+
 static void zmk_rgb_underglow_tick(struct k_work *work) {
     switch (state.current_effect) {
     case UNDERGLOW_EFFECT_SOLID:
@@ -188,6 +205,9 @@ static void zmk_rgb_underglow_tick(struct k_work *work) {
         break;
     case UNDERGLOW_EFFECT_SWIRL:
         zmk_rgb_underglow_effect_swirl();
+        break;
+    case UNDERGLOW_EFFECT_WALKER:
+        zmk_rgb_underglow_effect_walker();
         break;
     }
 

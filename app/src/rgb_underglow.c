@@ -50,7 +50,7 @@ enum rgb_underglow_effect {
     UNDERGLOW_EFFECT_BREATHE,
     UNDERGLOW_EFFECT_SPECTRUM,
     UNDERGLOW_EFFECT_SWIRL,
-    UNDERGLOW_EFFECT_WALKER,
+    UNDERGLOW_EFFECT_WAVE,
     UNDERGLOW_EFFECT_NUMBER // Used to track number of underglow effects
 };
 
@@ -177,27 +177,22 @@ static void zmk_rgb_underglow_effect_swirl(void) {
     state.animation_step = state.animation_step % HUE_MAX;
 }
 
-// TEMPORARY (discovery): auto-walk 0..N at 800 ms/LED, then a fast visible sweep back to 0.
-static uint8_t walker_step = 0;
-static uint8_t walker_tick = 0;
-static int8_t walker_dir = 1;
-
-static void zmk_rgb_underglow_effect_walker(void) {
+// WAVE: smooth rainbow flowing along the whole keyboard (across halves) with a soft
+// brightness ripple. The right half continues the gradient where the left one ends
+// via CONFIG_ZMK_RGB_UNDERGLOW_CHAIN_OFFSET.
+static void zmk_rgb_underglow_effect_wave(void) {
+    uint16_t total = CONFIG_ZMK_RGB_UNDERGLOW_CHAIN_TOTAL > 0 ? CONFIG_ZMK_RGB_UNDERGLOW_CHAIN_TOTAL
+                                                             : STRIP_NUM_PIXELS;
     for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
-        uint8_t v = (i == walker_step) ? 255 : 0;
-        pixels[i] = (struct led_rgb){r : v, g : v, b : v};
+        struct zmk_led_hsb hsb = state.color;
+        uint16_t g = i + CONFIG_ZMK_RGB_UNDERGLOW_CHAIN_OFFSET;
+        hsb.h = ((uint32_t)HUE_MAX * g / total + state.animation_step) % HUE_MAX;
+        hsb.b = hsb.b * (60 + 40 * (0.5f + 0.5f * sinf((float)g * 0.6f + (float)state.animation_step * 0.05f))) / 100;
+        pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
     }
 
-    walker_tick++;
-    if (walker_tick >= (walker_dir > 0 ? 16 : 1)) {
-        walker_tick = 0;
-        if (walker_dir > 0 && walker_step >= STRIP_NUM_PIXELS - 1) {
-            walker_dir = -1;
-        } else if (walker_dir < 0 && walker_step == 0) {
-            walker_dir = 1;
-        }
-        walker_step = walker_step + walker_dir;
-    }
+    state.animation_step += state.animation_speed;
+    state.animation_step = state.animation_step % HUE_MAX;
 }
 
 static void zmk_rgb_underglow_tick(struct k_work *work) {
@@ -214,8 +209,8 @@ static void zmk_rgb_underglow_tick(struct k_work *work) {
     case UNDERGLOW_EFFECT_SWIRL:
         zmk_rgb_underglow_effect_swirl();
         break;
-    case UNDERGLOW_EFFECT_WALKER:
-        zmk_rgb_underglow_effect_walker();
+    case UNDERGLOW_EFFECT_WAVE:
+        zmk_rgb_underglow_effect_wave();
         break;
     }
 

@@ -51,6 +51,7 @@ enum rgb_underglow_effect {
     UNDERGLOW_EFFECT_SPECTRUM,
     UNDERGLOW_EFFECT_SWIRL,
     UNDERGLOW_EFFECT_WAVE,
+    UNDERGLOW_EFFECT_WALKER,
     UNDERGLOW_EFFECT_NUMBER // Used to track number of underglow effects
 };
 
@@ -196,6 +197,29 @@ static void zmk_rgb_underglow_effect_wave(void) {
     state.animation_step = state.animation_step % (HUE_MAX * 2);
 }
 
+// TEMPORARY (discovery): auto-walk 0..N at 800 ms/LED, then a fast visible sweep back.
+static uint8_t walker_step = 0;
+static uint8_t walker_tick = 0;
+static int8_t walker_dir = 1;
+
+static void zmk_rgb_underglow_effect_walker(void) {
+    for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+        uint8_t v = (i == walker_step) ? 255 : 0;
+        pixels[i] = (struct led_rgb){r : v, g : v, b : v};
+    }
+
+    walker_tick++;
+    if (walker_tick >= (walker_dir > 0 ? 16 : 1)) {
+        walker_tick = 0;
+        if (walker_dir > 0 && walker_step >= STRIP_NUM_PIXELS - 1) {
+            walker_dir = -1;
+        } else if (walker_dir < 0 && walker_step == 0) {
+            walker_dir = 1;
+        }
+        walker_step = walker_step + walker_dir;
+    }
+}
+
 static uint8_t tick_half = 0;
 
 static void zmk_rgb_underglow_tick(struct k_work *work) {
@@ -221,6 +245,9 @@ static void zmk_rgb_underglow_tick(struct k_work *work) {
         break;
     case UNDERGLOW_EFFECT_WAVE:
         zmk_rgb_underglow_effect_wave();
+        break;
+    case UNDERGLOW_EFFECT_WALKER:
+        zmk_rgb_underglow_effect_walker();
         break;
     }
 

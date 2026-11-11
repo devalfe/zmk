@@ -23,6 +23,7 @@
 #include <zmk/usb.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/activity_state_changed.h>
+#include <zmk/events/position_state_changed.h>
 #include <zmk/events/usb_conn_state_changed.h>
 #include <zmk/workqueue.h>
 
@@ -176,21 +177,26 @@ static void zmk_rgb_underglow_effect_swirl(void) {
     state.animation_step = state.animation_step % HUE_MAX;
 }
 
-// TEMPORARY (discovery): walks a single lit LED across the strip, 1 s per LED.
+// TEMPORARY (discovery): one lit LED, advanced one step per key press.
 static uint8_t walker_step = 0;
-static uint8_t walker_tick = 0;
 
 static void zmk_rgb_underglow_effect_walker(void) {
     for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
         uint8_t v = (i == walker_step) ? 255 : 0;
         pixels[i] = (struct led_rgb){r : v, g : v, b : v};
     }
+}
 
-    if (++walker_tick >= 20) {
-        walker_tick = 0;
+static int walker_event_listener(const zmk_event_t *eh) {
+    const struct zmk_position_state_changed *ev = as_zmk_position_state_changed(eh);
+    if (ev != NULL && ev->state) {
         walker_step = (walker_step + 1) % STRIP_NUM_PIXELS;
     }
+    return 0;
 }
+
+ZMK_LISTENER(walker, walker_event_listener);
+ZMK_SUBSCRIPTION(walker, zmk_position_state_changed);
 
 static void zmk_rgb_underglow_tick(struct k_work *work) {
     switch (state.current_effect) {

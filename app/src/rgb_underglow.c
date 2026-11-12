@@ -200,14 +200,14 @@ static void zmk_rgb_underglow_effect_wave(void) {
 // DIAGONAL: chevron rainbow born at the inner-edge keys and flowing outward,
 // with a traveling light crest. Per-LED row/col come from the per-half
 // zmk,underglow-led-coords node; without it the effect stays inert.
-#if DT_NODE_EXISTS(DT_NODELABEL(underglow_led_coords))
+#if defined(DT_N_NODELABEL_underglow_led_coords)
 #define DIAG_COORDS DT_NODELABEL(underglow_led_coords)
 static const uint8_t diag_rows[] = DT_PROP(DIAG_COORDS, led_row);
 static const uint8_t diag_cols[] = DT_PROP(DIAG_COORDS, led_col);
 #endif
 
 static void zmk_rgb_underglow_effect_diagonal(void) {
-#if DT_NODE_EXISTS(DT_NODELABEL(underglow_led_coords))
+#if defined(DT_N_NODELABEL_underglow_led_coords)
     uint16_t step = state.animation_step % (HUE_MAX * 2);
     uint16_t phase = (HUE_MAX * 2 - step) % (HUE_MAX * 2);
     float crest_at = (float)step / (float)(HUE_MAX * 2) * 9.0f;

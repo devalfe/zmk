@@ -209,7 +209,11 @@ static void zmk_rgb_underglow_effect_walker(void) {
     }
 
     walker_tick++;
-    if (walker_tick >= (walker_dir > 0 ? 16 : 1)) {
+    uint8_t dwell = 1;
+    if (walker_dir > 0) {
+        dwell = (walker_step == 0 || walker_step >= STRIP_NUM_PIXELS - 1) ? 2 : 16;
+    }
+    if (walker_tick >= dwell) {
         walker_tick = 0;
         if (walker_dir > 0 && walker_step >= STRIP_NUM_PIXELS - 1) {
             walker_dir = -1;

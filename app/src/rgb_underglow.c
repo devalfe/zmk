@@ -53,6 +53,10 @@ enum rgb_underglow_effect {
     UNDERGLOW_EFFECT_WAVE,
     UNDERGLOW_EFFECT_DIAGONAL,
     UNDERGLOW_EFFECT_PERKEY,
+    UNDERGLOW_EFFECT_RAIN,
+    UNDERGLOW_EFFECT_STARLIGHT,
+    UNDERGLOW_EFFECT_SPLASH,
+    UNDERGLOW_EFFECT_HEATMAP,
     UNDERGLOW_EFFECT_NUMBER // Used to track number of underglow effects
 };
 
@@ -254,10 +258,179 @@ static void zmk_rgb_underglow_effect_perkey(void) {
     state.animation_step = state.animation_step % (HUE_MAX * 2);
 }
 
+// ---------------------------------------------------------------------------
+// Per-key effect family (QMK-inspired): RAIN, STARLIGHT, SPLASH, HEATMAP
+// ---------------------------------------------------------------------------
+#if defined(DT_N_NODELABEL_underglow_led_coords)
+#define LED_COORDS_NODE DT_NODELABEL(underglow_led_coords)
+static const uint8_t led_rows[] = DT_PROP(LED_COORDS_NODE, led_row);
+static const uint8_t led_cols[] = DT_PROP(LED_COORDS_NODE, led_col);
+static const uint8_t led_of_pos[] = DT_PROP(LED_COORDS_NODE, led_index);
+#endif
+
+static uint32_t zmk_rgb_hash(uint32_t x) {
+    x ^= x >> 16;
+    x *= 2246822519u;
+    x ^= x >> 13;
+    x *= 3266489917u;
+    x ^= x >> 16;
+    return x;
+}
+
+// RAIN: every LED holds a random hue that is re-rolled about once a second,
+// so the board keeps reshuffling like falling confetti.
+static uint16_t rain_hue[STRIP_NUM_PIXELS];
+static uint32_t rain_roll = 0;
+static uint8_t rain_timer = 0;
+
+static void zmk_rgb_rain_roll(void) {
+    rain_roll++;
+    for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+        rain_hue[i] = (uint16_t)(zmk_rgb_hash((uint32_t)(i + 1) * 31u + rain_roll) % 360);
+    }
+}
+
+static void zmk_rgb_underglow_effect_rain(void) {
+    if (rain_roll == 0) {
+        zmk_rgb_rain_roll();
+    }
+    if (++rain_timer >= 40) {
+        rain_timer = 0;
+        zmk_rgb_rain_roll();
+    }
+
+    for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+        struct zmk_led_hsb hsb = state.color;
+        hsb.h = rain_hue[i];
+        float shimmer = 0.5f + 0.5f * sinf((float)i * 0.7f + (float)state.animation_step * 0.02f);
+        hsb.b = hsb.b * (55 + 45 * shimmer) / 100;
+        pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
+    }
+
+    state.animation_step += state.animation_speed;
+    state.animation_step = state.animation_step % (HUE_MAX * 2);
+}
+
+// STARLIGHT: every LED twinkles on its own phase, hue and rate.
+static void zmk_rgb_underglow_effect_starlight(void) {
+    for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+        uint32_t h = zmk_rgb_hash((uint32_t)(i + 1) * 2654435761u);
+        struct zmk_led_hsb hsb = state.color;
+        hsb.h = (uint16_t)((h >> 16) % 360);
+        float phase = (float)(h % 360) * 0.01745f;
+        float rate = 0.4f + (float)((h >> 8) % 30) * 0.05f;
+        float tw = 0.5f + 0.5f * sinf(phase + (float)state.animation_step * rate * 0.1f);
+        tw = tw * tw;
+        hsb.b = hsb.b * (uint8_t)(tw * 100) / 100;
+        pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
+    }
+
+    state.animation_step += state.animation_speed;
+    state.animation_step = state.animation_step % (HUE_MAX * 2);
+}
+
+// SPLASH: a ring of light expands from the key you press and fades out.
+static int8_t splash_led = -1;
+static uint16_t splash_step = 0;
+
+static void zmk_rgb_underglow_effect_splash(void) {
+#if defined(DT_N_NODELABEL_underglow_led_coords)
+    if (splash_led >= 0) {
+        float radius = (float)splash_step * 0.35f;
+        for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+            struct zmk_led_hsb hsb = state.color;
+            float d = (float)(abs((int)led_rows[i] - (int)led_rows[splash_led]) +
+                              abs((int)led_cols[i] - (int)led_cols[splash_led]));
+            float ring = 1.0f - fabsf(d - radius) / 1.6f;
+            if (ring < 0.0f) {
+                ring = 0.0f;
+            }
+            float fade = 1.0f - (float)splash_step / 120.0f;
+            if (fade < 0.0f) {
+                fade = 0.0f;
+            }
+            hsb.b = hsb.b * (uint8_t)(ring * ring * fade * 100) / 100;
+            pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
+        }
+        splash_step++;
+        if (splash_step > 120) {
+            splash_led = -1;
+        }
+    } else {
+        for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+            pixels[i] = (struct led_rgb){0, 0, 0};
+        }
+    }
+#else
+    for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+        pixels[i] = (struct led_rgb){0, 0, 0};
+    }
+#endif
+
+    state.animation_step += state.animation_speed;
+    state.animation_step = state.animation_step % (HUE_MAX * 2);
+}
+
+// HEATMAP: keys you type heat up and the heat spreads to their neighbours.
+static uint8_t heat[STRIP_NUM_PIXELS];
+
+static void zmk_rgb_underglow_effect_heatmap(void) {
+    for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+        struct zmk_led_hsb hsb = state.color;
+        if (heat[i] > 3) {
+            heat[i] -= 3;
+        } else {
+            heat[i] = 0;
+        }
+        hsb.h = (uint16_t)((uint16_t)heat[i] * 60u / 255u);
+        hsb.b = hsb.b * heat[i] / 100;
+        pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
+    }
+
+    state.animation_step += state.animation_speed;
+    state.animation_step = state.animation_step % (HUE_MAX * 2);
+}
+
+#if defined(DT_N_NODELABEL_underglow_led_coords)
+static int zmk_rgb_perkey_listener(const zmk_event_t *eh) {
+    const struct zmk_position_state_changed *ev = as_zmk_position_state_changed(eh);
+    if (ev == NULL || !ev->state || ev->position >= ARRAY_SIZE(led_of_pos)) {
+        return 0;
+    }
+
+    uint8_t led = led_of_pos[ev->position];
+    if (led >= STRIP_NUM_PIXELS) {
+        return 0;
+    }
+
+    if (state.current_effect == UNDERGLOW_EFFECT_SPLASH) {
+        splash_led = led;
+        splash_step = 0;
+    } else if (state.current_effect == UNDERGLOW_EFFECT_HEATMAP) {
+        heat[led] = 255;
+        for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+            uint8_t d = (uint8_t)(abs((int)led_rows[i] - (int)led_rows[led]) +
+                                   abs((int)led_cols[i] - (int)led_cols[led]));
+            if (d == 1 && heat[i] < 175) {
+                heat[i] += 80;
+            }
+        }
+    }
+
+    return 0;
+}
+
+ZMK_LISTENER(zmk_rgb_perkey, zmk_rgb_perkey_listener);
+ZMK_SUBSCRIPTION(zmk_rgb_perkey, zmk_position_state_changed);
+#endif
+
 static uint8_t tick_half = 0;
 
 static void zmk_rgb_underglow_tick(struct k_work *work) {
-    if (state.current_effect != UNDERGLOW_EFFECT_WAVE && state.current_effect != UNDERGLOW_EFFECT_DIAGONAL && state.current_effect != UNDERGLOW_EFFECT_PERKEY) {
+    if (state.current_effect != UNDERGLOW_EFFECT_WAVE && state.current_effect != UNDERGLOW_EFFECT_DIAGONAL &&
+        state.current_effect != UNDERGLOW_EFFECT_PERKEY && state.current_effect != UNDERGLOW_EFFECT_RAIN &&
+        state.current_effect != UNDERGLOW_EFFECT_STARLIGHT && state.current_effect != UNDERGLOW_EFFECT_SPLASH &&
+        state.current_effect != UNDERGLOW_EFFECT_HEATMAP) {
         tick_half ^= 1;
         if (!tick_half) {
             return; // native effects keep their original 50 ms cadence
@@ -285,6 +458,18 @@ static void zmk_rgb_underglow_tick(struct k_work *work) {
         break;
     case UNDERGLOW_EFFECT_PERKEY:
         zmk_rgb_underglow_effect_perkey();
+        break;
+    case UNDERGLOW_EFFECT_RAIN:
+        zmk_rgb_underglow_effect_rain();
+        break;
+    case UNDERGLOW_EFFECT_STARLIGHT:
+        zmk_rgb_underglow_effect_starlight();
+        break;
+    case UNDERGLOW_EFFECT_SPLASH:
+        zmk_rgb_underglow_effect_splash();
+        break;
+    case UNDERGLOW_EFFECT_HEATMAP:
+        zmk_rgb_underglow_effect_heatmap();
         break;
     }
 

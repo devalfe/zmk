@@ -352,6 +352,10 @@ static int zmk_rgb_underglow_init(void) {
         on : IS_ENABLED(CONFIG_ZMK_RGB_UNDERGLOW_ON_START)
     };
 
+    if (state.current_effect >= UNDERGLOW_EFFECT_NUMBER) {
+        state.current_effect = UNDERGLOW_EFFECT_NUMBER - 1;
+    }
+
 #if IS_ENABLED(CONFIG_SETTINGS)
     k_work_init_delayable(&underglow_save_work, zmk_rgb_underglow_save_state_work);
 #endif

@@ -231,10 +231,9 @@ static void zmk_rgb_underglow_effect_diagonal(void) {
     state.animation_step = state.animation_step % (HUE_MAX * 2);
 }
 
-// PER-KEY: every key keeps its own solid colour and all of them drift through
-// the spectrum together, so the pattern can never collapse into groups.
-// The palette is the 21 golden-angle hues (137 deg apart) assigned through a
-// fixed permutation: physical neighbours end up >= 51 deg apart.
+// PER-KEY (QMK "pixel_flow" style): every LED keeps its own random hue while a
+// brightness pulse travels along the LED chain, so each key reads on its own and
+// the flow moves through the keyboard instead of grouping.
 static const uint16_t perkey_perm[STRIP_NUM_PIXELS] = {
     255, 153, 341, 32, 204, 118, 325, 51, 274, 188, 239,
     67,  0,   137, 290, 169, 306, 102, 16, 83,  220,
@@ -244,7 +243,10 @@ static void zmk_rgb_underglow_effect_perkey(void) {
     for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
         struct zmk_led_hsb hsb = state.color;
         uint16_t base = (uint16_t)((perkey_perm[i] * 2) % (HUE_MAX * 2));
-        hsb.h = (uint16_t)(((base + state.animation_step) % (HUE_MAX * 2)) / 2);
+        uint16_t wave = (uint16_t)((state.animation_step + i * 24) % (HUE_MAX * 2));
+        float pulse = 0.5f + 0.5f * sinf(wave * 0.0436f);
+        hsb.h = (uint16_t)(((base + state.animation_step / 4) % (HUE_MAX * 2)) / 2);
+        hsb.b = hsb.b * (25 + 75 * pulse) / 100;
         pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
     }
 

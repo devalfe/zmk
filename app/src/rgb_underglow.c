@@ -219,14 +219,14 @@ static void zmk_rgb_underglow_effect_diagonal(void) {
         if (x > 4.5f) {
             x = 9.0f - x;
         }
-        float crest = x >= 1.2f ? 0.0f : (1.2f - x) / 1.2f;
-        hsb.b = hsb.b * (80 + 20 * crest) / 100;
-        hsb.s = hsb.s * (1.0f - 0.5f * crest);
+        float crest = x >= 1.0f ? 0.0f : (1.0f - x) / 1.0f;
+        hsb.b = hsb.b * (85 + 15 * crest) / 100;
+        hsb.s = hsb.s * (1.0f - 0.3f * crest);
         pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
     }
 #endif
 
-    state.animation_step += state.animation_speed;
+    state.animation_step += state.animation_speed * 2;
     state.animation_step = state.animation_step % (HUE_MAX * 2);
 }
 

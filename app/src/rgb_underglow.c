@@ -246,8 +246,11 @@ static void zmk_rgb_underglow_effect_perkey(void) {
         hsh *= 3266489917u;
         hsh ^= hsh >> 16; // fmix32 avalanche: decorrelates consecutive keys
         uint16_t rate = 2 + (hsh % 7); // per-key drift rate, 2..8
+        // Neighbours are forced at least 137 deg apart in hue so no two adjacent
+        // keys ever land on a similar colour; the hash keeps the rest scattered.
+        uint32_t base = ((hsh % (HUE_MAX * 2)) + (uint32_t)i * 274) % (HUE_MAX * 2);
         perkey_q[i] = (perkey_q[i] + state.animation_speed * rate) % (HUE_MAX * 2 * 8);
-        hsb.h = (((hsh % (HUE_MAX * 2)) * 8 + perkey_q[i]) % (HUE_MAX * 2 * 8)) / 16;
+        hsb.h = ((base * 8 + perkey_q[i]) % (HUE_MAX * 2 * 8)) / 16;
         pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
     }
 }

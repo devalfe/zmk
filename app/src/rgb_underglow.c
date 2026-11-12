@@ -52,6 +52,7 @@ enum rgb_underglow_effect {
     UNDERGLOW_EFFECT_SWIRL,
     UNDERGLOW_EFFECT_WAVE,
     UNDERGLOW_EFFECT_DIAGONAL,
+    UNDERGLOW_EFFECT_PERKEY,
     UNDERGLOW_EFFECT_NUMBER // Used to track number of underglow effects
 };
 
@@ -230,10 +231,23 @@ static void zmk_rgb_underglow_effect_diagonal(void) {
     state.animation_step = state.animation_step % (HUE_MAX * 2);
 }
 
+// PER-KEY: every key holds its own solid color; all drift through the
+// spectrum at slightly different rates so the board constantly reshuffles.
+static void zmk_rgb_underglow_effect_perkey(void) {
+    for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+        struct zmk_led_hsb hsb = state.color;
+        hsb.h = ((uint32_t)i * 274 + (uint32_t)state.animation_step * (1 + (i % 3)) / 8) % (HUE_MAX * 2) / 2;
+        pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
+    }
+
+    state.animation_step += state.animation_speed;
+    state.animation_step = state.animation_step % (HUE_MAX * 2);
+}
+
 static uint8_t tick_half = 0;
 
 static void zmk_rgb_underglow_tick(struct k_work *work) {
-    if (state.current_effect != UNDERGLOW_EFFECT_WAVE && state.current_effect != UNDERGLOW_EFFECT_DIAGONAL) {
+    if (state.current_effect != UNDERGLOW_EFFECT_WAVE && state.current_effect != UNDERGLOW_EFFECT_DIAGONAL && state.current_effect != UNDERGLOW_EFFECT_PERKEY) {
         tick_half ^= 1;
         if (!tick_half) {
             return; // native effects keep their original 50 ms cadence
@@ -258,6 +272,9 @@ static void zmk_rgb_underglow_tick(struct k_work *work) {
         break;
     case UNDERGLOW_EFFECT_DIAGONAL:
         zmk_rgb_underglow_effect_diagonal();
+        break;
+    case UNDERGLOW_EFFECT_PERKEY:
+        zmk_rgb_underglow_effect_perkey();
         break;
     }
 

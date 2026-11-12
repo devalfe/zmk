@@ -240,9 +240,14 @@ static void zmk_rgb_underglow_effect_perkey(void) {
     for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
         struct zmk_led_hsb hsb = state.color;
         uint32_t hsh = (uint32_t)(i + 1) * 2654435761u;
-        uint16_t rate = 2 + ((hsh >> 24) % 7); // per-key drift rate, 2..8
+        hsh ^= hsh >> 16;
+        hsh *= 2246822519u;
+        hsh ^= hsh >> 13;
+        hsh *= 3266489917u;
+        hsh ^= hsh >> 16; // fmix32 avalanche: decorrelates consecutive keys
+        uint16_t rate = 2 + (hsh % 7); // per-key drift rate, 2..8
         perkey_q[i] = (perkey_q[i] + state.animation_speed * rate) % (HUE_MAX * 2 * 8);
-        hsb.h = ((((hsh >> 5) % (HUE_MAX * 2)) * 8 + perkey_q[i]) % (HUE_MAX * 2 * 8)) / 16;
+        hsb.h = (((hsh % (HUE_MAX * 2)) * 8 + perkey_q[i]) % (HUE_MAX * 2 * 8)) / 16;
         pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
     }
 }

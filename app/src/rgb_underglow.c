@@ -231,28 +231,25 @@ static void zmk_rgb_underglow_effect_diagonal(void) {
     state.animation_step = state.animation_step % (HUE_MAX * 2);
 }
 
-// PER-KEY: every key holds its own solid color and drifts through the
-// spectrum at its own rate and phase (per-key hash), so each key changes
-// independently instead of in groups. Phases are 1/16-degree fixed point.
-static uint16_t perkey_q[STRIP_NUM_PIXELS];
+// PER-KEY: every key keeps its own solid colour and all of them drift through
+// the spectrum together, so the pattern can never collapse into groups.
+// The palette is the 21 golden-angle hues (137 deg apart) assigned through a
+// fixed permutation: physical neighbours end up >= 51 deg apart.
+static const uint16_t perkey_perm[STRIP_NUM_PIXELS] = {
+    255, 153, 341, 32, 204, 118, 325, 51, 274, 188, 239,
+    67,  0,   137, 290, 169, 306, 102, 16, 83,  220,
+};
 
 static void zmk_rgb_underglow_effect_perkey(void) {
     for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
         struct zmk_led_hsb hsb = state.color;
-        uint32_t hsh = (uint32_t)(i + 1) * 2654435761u;
-        hsh ^= hsh >> 16;
-        hsh *= 2246822519u;
-        hsh ^= hsh >> 13;
-        hsh *= 3266489917u;
-        hsh ^= hsh >> 16; // fmix32 avalanche: decorrelates consecutive keys
-        uint16_t rate = 2 + (hsh % 7); // per-key drift rate, 2..8
-        // Neighbours are forced at least 137 deg apart in hue so no two adjacent
-        // keys ever land on a similar colour; the hash keeps the rest scattered.
-        uint32_t base = ((hsh % (HUE_MAX * 2)) + (uint32_t)i * 274) % (HUE_MAX * 2);
-        perkey_q[i] = (perkey_q[i] + state.animation_speed * rate) % (HUE_MAX * 2 * 8);
-        hsb.h = ((base * 8 + perkey_q[i]) % (HUE_MAX * 2 * 8)) / 16;
+        uint16_t base = (uint16_t)((perkey_perm[i] * 2) % (HUE_MAX * 2));
+        hsb.h = (uint16_t)(((base + state.animation_step) % (HUE_MAX * 2)) / 2);
         pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
     }
+
+    state.animation_step += state.animation_speed;
+    state.animation_step = state.animation_step % (HUE_MAX * 2);
 }
 
 static uint8_t tick_half = 0;

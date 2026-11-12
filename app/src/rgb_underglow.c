@@ -51,7 +51,7 @@ enum rgb_underglow_effect {
     UNDERGLOW_EFFECT_SPECTRUM,
     UNDERGLOW_EFFECT_SWIRL,
     UNDERGLOW_EFFECT_WAVE,
-    UNDERGLOW_EFFECT_WALKER,
+    UNDERGLOW_EFFECT_DIAGONAL,
     UNDERGLOW_EFFECT_NUMBER // Used to track number of underglow effects
 };
 
@@ -197,37 +197,43 @@ static void zmk_rgb_underglow_effect_wave(void) {
     state.animation_step = state.animation_step % (HUE_MAX * 2);
 }
 
-// TEMPORARY (discovery): auto-walk 0..N at 800 ms/LED, then a fast visible sweep back.
-static uint8_t walker_step = 0;
-static uint8_t walker_tick = 0;
-static int8_t walker_dir = 1;
+// DIAGONAL: chevron rainbow born at the inner-edge keys and flowing outward,
+// with a traveling light crest. Per-LED row/col come from the per-half
+// zmk,underglow-led-coords node; without it the effect stays inert.
+#if DT_HAS_COMPAT(zmk_underglow_led_coords)
+#define DIAG_COORDS DT_COMPAT_GET_ANY_STATUS_OKAY(zmk_underglow_led_coords)
+static const uint8_t diag_rows[] = DT_PROP(DIAG_COORDS, led_row);
+static const uint8_t diag_cols[] = DT_PROP(DIAG_COORDS, led_col);
+#endif
 
-static void zmk_rgb_underglow_effect_walker(void) {
-    for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
-        uint8_t v = (i == walker_step) ? 255 : 0;
-        pixels[i] = (struct led_rgb){r : v, g : v, b : v};
-    }
-
-    walker_tick++;
-    uint8_t dwell = 1;
-    if (walker_dir > 0) {
-        dwell = (walker_step == 0 || walker_step >= STRIP_NUM_PIXELS - 1) ? 2 : 16;
-    }
-    if (walker_tick >= dwell) {
-        walker_tick = 0;
-        if (walker_dir > 0 && walker_step >= STRIP_NUM_PIXELS - 1) {
-            walker_dir = -1;
-        } else if (walker_dir < 0 && walker_step == 0) {
-            walker_dir = 1;
+static void zmk_rgb_underglow_effect_diagonal(void) {
+#if DT_HAS_COMPAT(zmk_underglow_led_coords)
+    uint16_t step = state.animation_step % (HUE_MAX * 2);
+    uint16_t phase = (HUE_MAX * 2 - step) % (HUE_MAX * 2);
+    float crest_at = (float)step / (float)(HUE_MAX * 2) * 9.0f;
+    for (int i = 0; i < STRIP_NUM_PIXELS && i < DT_PROP_LEN(DIAG_COORDS, led_row); i++) {
+        struct zmk_led_hsb hsb = state.color;
+        uint8_t d = diag_rows[i] + diag_cols[i]; // diagonal coordinate, 0..8
+        hsb.h = (((uint32_t)HUE_MAX * 2 * d / 9 + phase) % (HUE_MAX * 2)) / 2;
+        float x = fabsf((float)d - crest_at);
+        if (x > 4.5f) {
+            x = 9.0f - x;
         }
-        walker_step = walker_step + walker_dir;
+        float crest = x >= 2.0f ? 0.0f : (2.0f - x) / 2.0f;
+        hsb.b = hsb.b * (60 + 40 * crest) / 100;
+        hsb.s = hsb.s * (1.0f - 0.85f * crest);
+        pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
     }
+#endif
+
+    state.animation_step += state.animation_speed;
+    state.animation_step = state.animation_step % (HUE_MAX * 2);
 }
 
 static uint8_t tick_half = 0;
 
 static void zmk_rgb_underglow_tick(struct k_work *work) {
-    if (state.current_effect != UNDERGLOW_EFFECT_WAVE) {
+    if (state.current_effect != UNDERGLOW_EFFECT_WAVE && state.current_effect != UNDERGLOW_EFFECT_DIAGONAL) {
         tick_half ^= 1;
         if (!tick_half) {
             return; // native effects keep their original 50 ms cadence
@@ -250,8 +256,8 @@ static void zmk_rgb_underglow_tick(struct k_work *work) {
     case UNDERGLOW_EFFECT_WAVE:
         zmk_rgb_underglow_effect_wave();
         break;
-    case UNDERGLOW_EFFECT_WALKER:
-        zmk_rgb_underglow_effect_walker();
+    case UNDERGLOW_EFFECT_DIAGONAL:
+        zmk_rgb_underglow_effect_diagonal();
         break;
     }
 

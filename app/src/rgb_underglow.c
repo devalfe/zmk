@@ -290,11 +290,39 @@ static void zmk_rgb_underglow_effect_rain(void) {
         // 2. Generamos un hash único para esta tecla en este instante
         uint32_t h = zmk_rgb_hash((uint32_t)(i + 1) * 31u + rain_roll);
         
-        // 3. PROBABILIDAD DE CAMBIO: 
-        // "h % 40 == 0" significa que cada tecla tiene 1 probabilidad entre 40 de cambiar de color en este frame.
-        // Si quieres que cambien más rápido, baja el 40 (ej. a 20). Si lo quieres más lento, súbelo (ej. a 80).
-        if (rain_roll == 1 || (h % 40 == 0)) {
-            rain_hue[i] = (uint16_t)(zmk_rgb_hash(h) % 360);
+        // 3. PROBABILIDAD DE CAMBIO (ahora ligada al knob de velocidad RGB_SPI/SPD):
+        //    speed 1 -> cambia menos a menudo, speed 5 -> cambia mas.
+        //    Antes era un 40 fijo; ahora lo controla el knob de velocidad.
+        uint16_t chance = 80 / (state.animation_speed ? state.animation_speed : 1);
+        if (rain_roll == 1 || (h % chance) == 0) {
+            // 3b. EVITAMOS TONOS CERCANOS: con 21 teclas en 360 grados solo caben
+            //     ~17 grados de separacion entre la mas cercana y la mas lejana,
+            //     asi que elegimos el tono mas alejado posible del resto de teclas.
+            //     Sin esto, dos teclas caen a veces casi en el mismo color y el
+            //     teclado se ve "en grupo".
+            uint16_t best = (uint16_t)(zmk_rgb_hash(h) % 360);
+            uint16_t best_gap = 0;
+            for (int tries = 0; tries < 12; tries++) {
+                uint16_t cand = (uint16_t)(zmk_rgb_hash(h + tries * 7919u) % 360);
+                uint16_t gap = 360;
+                for (int j = 0; j < STRIP_NUM_PIXELS; j++) {
+                    if (j == i) {
+                        continue;
+                    }
+                    int d = abs((int)cand - (int)rain_hue[j]);
+                    if (d > 180) {
+                        d = 360 - d;
+                    }
+                    if (d < gap) {
+                        gap = (uint16_t)d;
+                    }
+                }
+                if (gap > best_gap) {
+                    best_gap = gap;
+                    best = cand;
+                }
+            }
+            rain_hue[i] = best;
         }
 
         struct zmk_led_hsb hsb = state.color;

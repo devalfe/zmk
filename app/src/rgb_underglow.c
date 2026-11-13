@@ -283,24 +283,26 @@ static uint16_t rain_hue[STRIP_NUM_PIXELS];
 static uint32_t rain_roll = 0;
 
 static void zmk_rgb_underglow_effect_rain(void) {
-    // 1. Avanzamos el contador global cada frame
+    // Avanzamos el contador global cada frame
     rain_roll++;
     
     for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
-        // 2. Generamos un hash único para esta tecla en este instante
-        uint32_t h = zmk_rgb_hash((uint32_t)(i + 1) * 31u + rain_roll);
+        // 1. MAGIA: Multiplicamos 'i' por un primo gigante (2654435761u) 
+        // Esto separa los números de las teclas vecinas de forma radical.
+        // Así el hash devuelve resultados totalmente no correlacionados.
+        uint32_t h = zmk_rgb_hash((uint32_t)i * 2654435761u + rain_roll);
         
-        // 3. PROBABILIDAD DE CAMBIO: 
-        // "h % 40 == 0" significa que cada tecla tiene 1 probabilidad entre 40 de cambiar de color en este frame.
-        // Si quieres que cambien más rápido, baja el 40 (ej. a 20). Si lo quieres más lento, súbelo (ej. a 80).
-        if (rain_roll == 1 || (h % 40 == 0)) {
+        // 2. Probabilidad de cambio (h % 30 == 0 significa 1 posibilidad entre 30 por frame)
+        // Si quieres que cambien más rápido, baja el 30 a 15. Si lo quieres más lento, súbelo a 60.
+        if (rain_roll == 1 || (h % 30 == 0)) {
+            // 3. Asignamos el nuevo tono (Hue)
             rain_hue[i] = (uint16_t)(zmk_rgb_hash(h) % 360);
         }
 
         struct zmk_led_hsb hsb = state.color;
         hsb.h = rain_hue[i];
         
-        // 4. Mantenemos tu onda de brillo original (el efecto "shimmer")
+        // 4. Mantenemos el efecto de respiración/onda
         float shimmer = 0.5f + 0.5f * sinf((float)i * 0.7f + (float)state.animation_step * 0.02f);
         hsb.b = hsb.b * (55 + 45 * shimmer) / 100;
         
@@ -311,7 +313,6 @@ static void zmk_rgb_underglow_effect_rain(void) {
     state.animation_step += state.animation_speed;
     state.animation_step = state.animation_step % (HUE_MAX * 2);
 }
-
 // STARLIGHT: every LED twinkles on its own phase, hue and rate.
 static void zmk_rgb_underglow_effect_starlight(void) {
     for (int i = 0; i < STRIP_NUM_PIXELS; i++) {

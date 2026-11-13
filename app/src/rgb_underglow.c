@@ -281,32 +281,33 @@ static uint32_t zmk_rgb_hash(uint32_t x) {
 // so the board keeps reshuffling like falling confetti.
 static uint16_t rain_hue[STRIP_NUM_PIXELS];
 static uint32_t rain_roll = 0;
-static uint8_t rain_timer = 0;
-
-static void zmk_rgb_rain_roll(void) {
-    rain_roll++;
-    for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
-        rain_hue[i] = (uint16_t)(zmk_rgb_hash((uint32_t)(i + 1) * 31u + rain_roll) % 360);
-    }
-}
 
 static void zmk_rgb_underglow_effect_rain(void) {
-    if (rain_roll == 0) {
-        zmk_rgb_rain_roll();
-    }
-    if (++rain_timer >= 40) {
-        rain_timer = 0;
-        zmk_rgb_rain_roll();
-    }
-
+    // 1. Avanzamos el contador global cada frame
+    rain_roll++;
+    
     for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+        // 2. Generamos un hash único para esta tecla en este instante
+        uint32_t h = zmk_rgb_hash((uint32_t)(i + 1) * 31u + rain_roll);
+        
+        // 3. PROBABILIDAD DE CAMBIO: 
+        // "h % 40 == 0" significa que cada tecla tiene 1 probabilidad entre 40 de cambiar de color en este frame.
+        // Si quieres que cambien más rápido, baja el 40 (ej. a 20). Si lo quieres más lento, súbelo (ej. a 80).
+        if (rain_roll == 1 || (h % 40 == 0)) {
+            rain_hue[i] = (uint16_t)(zmk_rgb_hash(h) % 360);
+        }
+
         struct zmk_led_hsb hsb = state.color;
         hsb.h = rain_hue[i];
+        
+        // 4. Mantenemos tu onda de brillo original (el efecto "shimmer")
         float shimmer = 0.5f + 0.5f * sinf((float)i * 0.7f + (float)state.animation_step * 0.02f);
         hsb.b = hsb.b * (55 + 45 * shimmer) / 100;
+        
         pixels[i] = hsb_to_rgb(hsb_scale_min_max(hsb));
     }
-
+    
+    // 5. Avanzar la animación global
     state.animation_step += state.animation_speed;
     state.animation_step = state.animation_step % (HUE_MAX * 2);
 }
